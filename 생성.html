@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Center Dot — 10s Lifetime + Timer (Loop & 10× size)</title>
+<style>
+  html,body{height:100%;margin:0;background:#000;color:#fff}
+  canvas{display:block;width:100vw;height:100vh}
+  .hud-left{position:fixed;left:12px;bottom:10px;font:12px/1.4 ui-sans-serif,system-ui;opacity:.65;pointer-events:none}
+  .hud-right{position:fixed;right:12px;bottom:10px;font:14px/1.4 ui-sans-serif,system-ui;
+             background:rgba(0,0,0,0.35);padding:6px 10px;border:1px solid rgba(255,255,255,0.18);
+             border-radius:10px;backdrop-filter:blur(2px)}
+  .hud-right .label{opacity:.65;margin-right:6px}
+  .hud-right .val{font-weight:700;letter-spacing:.02em}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="hud-left">Center dot · lifetime 10s · respawn loop · radius ×10</div>
+<div class="hud-right"><span class="label">Remaining</span><span class="val" id="remain">10.00s</span></div>
+
+<script>
+const cvs = document.getElementById('scene');
+const ctx = cvs.getContext('2d',{alpha:false});
+const remainEl = document.getElementById('remain');
+
+// DPR 안전 전체화면 세팅
+function fit(){
+  const dpr = Math.min(window.devicePixelRatio||1, 1.5);
+  const W = Math.max(2, Math.floor(window.innerWidth));
+  const H = Math.max(2, Math.floor(window.innerHeight));
+  cvs.width  = Math.floor(W*dpr);
+  cvs.height = Math.floor(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {W,H};
+}
+let view = fit();
+addEventListener('resize', ()=>{ view = fit(); initDot(); });
+
+// 점 하나(정중앙, 수명 10초, 반지름 10배)
+const LIFE_SEC = 10;
+let dot = null;
+function initDot(){
+  const now = performance.now();
+  dot = {
+    x: view.W*0.5,
+    y: view.H*0.5,
+    birth: now,
+    life: LIFE_SEC*1000, // ms
+    baseR: 60            // 기존 6의 10배
+  };
+  remainEl.textContent = `${LIFE_SEC.toFixed(2)}s`;
+}
+initDot();
+
+// 메인 루프
+let last = performance.now();
+(function loop(){
+  requestAnimationFrame(loop);
+  const now = performance.now();
+  const dt = Math.min(40, now-last); last = now;
+
+  // 배경(잔상 없이 깔끔하게)
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,view.W,view.H);
+
+  // 남은 시간 계산
+  const ageMs = now - dot.birth;
+  const remainMs = Math.max(0, dot.life - ageMs);
+  const remainSec = remainMs / 1000;
+  remainEl.textContent = `${remainSec.toFixed(2)}s`;
+
+  // 페이드/스케일
+  const t = Math.max(0, 1 - ageMs / dot.life); // 1→0
+  const alpha = t;
+  const radius = Math.max(1, dot.baseR * (0.6 + 0.4*t)); // 60~100%로 서서히 축소
+
+  // 그리기
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = 'rgba(255,255,255,0.9)';
+  ctx.shadowBlur = 16;
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.beginPath();
+  ctx.arc(dot.x, dot.y, radius, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // 수명 종료 시 즉시 재생성(무한 반복)
+  if(ageMs >= dot.life){
+    initDot();
+  }
+})();
+</script>
+</body>
+</html>

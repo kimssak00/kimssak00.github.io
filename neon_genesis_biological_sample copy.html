@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neon Genesis – Biological Sample</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; overflow:hidden; }
+  canvas { display:block; width:100vw; height:100vh; }
+  .hud {
+    position:fixed; left:18px; top:14px; color:#eaeaea;
+    font:600 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    letter-spacing:0.6px; text-shadow:0 0 6px rgba(255,255,255,0.18);
+    user-select:none; pointer-events:none;
+  }
+  .hud small { display:block; font-weight:500; opacity:.65; letter-spacing:.2px }
+</style>
+</head>
+<body>
+  <div class="hud">
+    NEON GENESIS — <span style="opacity:.85">BIOLOGICAL SAMPLE</span>
+    <small>Species Codename: NERVA</small>
+  </div>
+  <canvas id="scene"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('scene');
+  const ctx = canvas.getContext('2d', { alpha:false, desynchronized:true });
+  let DPR = Math.min(window.devicePixelRatio || 1, 2);
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = Math.floor(innerWidth  * DPR);
+    canvas.height = Math.floor(innerHeight * DPR);
+  }
+  addEventListener('resize', resize, { passive:true });
+  resize();
+
+  const params = {
+    spawnPerSec: 4,
+    maxSamples: 1200,
+    lifeSec: 100,
+    speedMin: 0.05,
+    speedMax: 0.20,
+    radiusMin: 0.8,
+    radiusMax: 1.8,     // 일부는 아래에서 ×3
+    bigProb: 0.22,      // 큰 개체 확률
+    bigScale: 3.0,      // 큰 개체 크기 배수
+    separationDist: 22,
+    cohesionDist: 90,   // 살짝 ↑
+    alignDist: 80,      // 살짝 ↑
+    separationForce: 0.020,
+    cohesionForce: 0.006,
+    alignForce: 0.008,
+    wallBounce: 0.94,
+    driftStrength: 0.05,
+    phasePeriod: 14000,
+    pulseEvery: 11000,
+    pulseJitter: 2500,
+    gridSize: 64,
+
+    // ▶ 새로 추가: 가장자리 척력 + 중앙 바이어스
+    edgeRange: 180,             // px @1x, 이 거리 안에서 테두리 척력 작동
+    edgeRepelStrength: 0.0008,  // 테두리 척력 세기
+    centerBiasStrength: 0.0005  // 중앙으로 아주 약하게 당기는 바이어스
+  };
+
+  const rnd = (a=1, b=0) => b + (a - b) * Math.random();
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const nowMS = () => performance.now();
+
+  function flowVec(x, y, t) {
+    const s = 0.0009, st = 0.00025;
+    const u = Math.sin(x*s + t*st*2.0) + Math.cos(y*s*1.3 - t*st*1.7);
+    const v = Math.cos(x*s*0.8 - t*st*1.2) - Math.sin(y*s*1.1 + t*st*1.8);
+    const m = Math.hypot(u, v) || 1;
+    return [u/m, v/m];
+  }
+
+  const MAX = params.maxSamples;
+  const x = new Float32Array(MAX);
+  const y = new Float32Array(MAX);
+  const vx = new Float32Array(MAX);
+  const vy = new Float32Array(MAX);
+  const born = new Float32Array(MAX);
+  const life = new Float32Array(MAX);
+  const r = new Float32Array(MAX);
+  const mass = new Float32Array(MAX); // 질량 ~ r^2
+  let count = 0;
+
+  function addSample(t) {
+    if (count >= MAX) return;
+    const i = count++;
+    const cw = canvas.width, ch = canvas.height;
+
+    const edge = Math.random() < 0.65;
+    if (edge) {
+      const side = Math.floor(Math.random()*4);
+      if (side === 0) { x[i] = rnd(cw); y[i] = -5; }
+      else if (side === 1) { x[i] = cw+5; y[i] = rnd(ch); }
+      else if (side === 2) { x[i] = rnd(cw); y[i] = ch+5; }
+      else { x[i] = -5; y[i] = rnd(ch); }
+    } else {
+      x[i] = rnd(cw); y[i] = rnd(ch);
+    }
+    const sp = rnd(params.speedMin, params.speedMax) * DPR;
+    const ang = rnd(Math.PI*2);
+    vx[i] = Math.cos(ang) * sp;
+    vy[i] = Math.sin(ang) * sp;
+    born[i] = t;
+    life[i] = params.lifeSec * 1000;
+
+    // ▶ 크기 분포: 일부는 3배까지
+    const base = rnd(params.radiusMin, params.radiusMax);
+    const scale = Math.random() < params.bigProb ? params.bigScale : 1.0;
+    r[i] = base * scale * DPR;
+    mass[i] = (r[i] / DPR) ** 2; // DPR 보정 전 반지름 기준으로 질량 설정
+  }
+
+  function removeAt(i) {
+    const j = count - 1;
+    if (i !== j) {
+      x[i]=x[j]; y[i]=y[j]; vx[i]=vx[j]; vy[i]=vy[j];
+      born[i]=born[j]; life[i]=life[j]; r[i]=r[j]; mass[i]=mass[j];
+    }
+    count--;
+  }
+
+  function buildGrid(cell) {
+    const cw = canvas.width, ch = canvas.height;
+    const cols = Math.max(1, (cw / cell) | 0);
+    const rows = Math.max(1, (ch / cell) | 0);
+    const buckets = new Map();
+    for (let i=0;i<count;i++) {
+      const cx = ((x[i]/cell)|0);
+      const cy = ((y[i]/cell)|0);
+      const key = cx + cy*cols;
+      const arr = buckets.get(key);
+      if (arr) arr.push(i); else buckets.set(key,[i]);
+    }
+    return { cell, cols, rows, buckets };
+  }
+
+  function neighbors(grid, px, py) {
+    const { cell, cols, buckets } = grid;
+    const cx = (px / cell) | 0;
+    const cy = (py / cell) | 0;
+    const out = [];
+    for (let oy=-1; oy<=1; oy++) {
+      for (let ox=-1; ox<=1; ox++) {
+        const key = (cx+ox) + (cy+oy)*cols;
+        const arr = buckets.get(key);
+        if (arr) out.push(...arr);
+      }
+    }
+    return out;
+  }
+
+  let phaseFlipAt = nowMS() + params.phasePeriod;
+  let phase = 1; // 1=cluster, -1=disperse
+  let nextPulseAt = nowMS() + params.pulseEvery + rnd(params.pulseJitter, -params.pulseJitter);
+
+  function updatePhase(t) {
+    if (t >= phaseFlipAt) { phase *= -1; phaseFlipAt = t + params.phasePeriod; }
+    if (t >= nextPulseAt) {
+      for (let i=0;i<count;i++) {
+        const ang = Math.atan2(vy[i], vx[i]);
+        const da = rnd(-Math.PI, Math.PI);
+        const s = rnd(0.06, 0.13) * DPR;
+        vx[i] += Math.cos(ang + da) * s;
+        vy[i] += Math.sin(ang + da) * s;
+      }
+      nextPulseAt = t + params.pulseEvery + rnd(params.pulseJitter, -params.pulseJitter);
+    }
+  }
+
+  let last = nowMS();
+  let spawnAcc = 0;
+
+  function step() {
+    const t = nowMS();
+    let dt = t - last;
+    dt = Math.min(dt, 40);
+    last = t;
+
+    updatePhase(t);
+
+    spawnAcc += dt * params.spawnPerSec / 1000;
+    while (spawnAcc >= 1) { addSample(t); spawnAcc -= 1; }
+
+    const cell = params.gridSize * DPR;
+    const grid = buildGrid(cell);
+
+    const sepR2 = (params.separationDist*DPR)**2;
+    const cohR2 = (params.cohesionDist*DPR)**2;
+    const aliR2 = (params.alignDist*DPR)**2;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+
+    const cx0 = canvas.width * 0.5;
+    const cy0 = canvas.height * 0.5;
+    const edgeRange = params.edgeRange * DPR;
+
+    for (let i=0;i<count;i++) {
+      const age = t - born[i];
+      const remain = 1 - age / life[i];
+      if (remain <= 0) { removeAt(i); i--; continue; }
+
+      let fx = 0, fy = 0;
+
+      // 흐름장
+      {
+        const [ux, uy] = flowVec(x[i], y[i], t);
+        fx += ux * params.driftStrength * DPR;
+        fy += uy * params.driftStrength * DPR;
+      }
+
+      // ▶ 테두리 척력(가장자리 근처에서만 작동)
+      {
+        const w = canvas.width, h = canvas.height;
+        const dl = x[i];             // 왼쪽으로의 거리
+        const dr = w - x[i];         // 오른쪽으로의 거리
+        const dtp = y[i];            // 위쪽
+        const db = h - y[i];         // 아래쪽
+
+        // 각 변에서 일정 범위(edgeRange) 안이면 안쪽으로 민다
+        if (dl < edgeRange) fx += ( (edgeRange - dl) / edgeRange ) * params.edgeRepelStrength * DPR;
+        if (dr < edgeRange) fx -= ( (edgeRange - dr) / edgeRange ) * params.edgeRepelStrength * DPR;
+        if (dtp < edgeRange) fy += ( (edgeRange - dtp) / edgeRange ) * params.edgeRepelStrength * DPR;
+        if (db < edgeRange) fy -= ( (edgeRange - db) / edgeRange ) * params.edgeRepelStrength * DPR;
+      }
+
+      // ▶ 중앙 바이어스(아주 약함: 중심에 더 머물게)
+      {
+        fx += (cx0 - x[i]) * params.centerBiasStrength;
+        fy += (cy0 - y[i]) * params.centerBiasStrength;
+      }
+
+      // 이웃 상호작용 (질량 가중: 큰 개체 영향 ↑)
+      let ax = 0, ay = 0, mA = 0;
+      let cx = 0, cy = 0, mC = 0;
+      const neigh = neighbors(grid, x[i], y[i]);
+      for (let k=0;k<neigh.length;k++) {
+        const j = neigh[k]; if (j===i) continue;
+        const dx = x[j]-x[i], dy = y[j]-y[i];
+        const d2 = dx*dx + dy*dy;
+        if (d2 < sepR2 && d2 > 0.0001) {
+          // 분리: 가까우면 밀어냄(상대 질량 반영 X, 근접 우선)
+          const inv = 1 / Math.sqrt(d2);
+          fx -= dx * inv * params.separationForce;
+          fy -= dy * inv * params.separationForce;
+        }
+        // 응집/정렬은 이웃의 질량(mass[j])으로 가중 → 큰 점이 더 "끌어당김"
+        if (d2 < cohR2) {
+          const wj = mass[j];
+          cx += x[j] * wj; cy += y[j] * wj; mC += wj;
+        }
+        if (d2 < aliR2) {
+          const wj = mass[j];
+          ax += vx[j] * wj; ay += vy[j] * wj; mA += wj;
+        }
+      }
+      // 응집: 질량중심으로
+      if (mC > 0) {
+        cx /= mC; cy /= mC;
+        const sign = (phase>0 ? 1.0 : -0.6);
+        fx += (cx - x[i]) * params.cohesionForce * sign;
+        fy += (cy - y[i]) * params.cohesionForce * sign;
+      }
+      // 정렬: 질량 가중 평균 속도에 맞춤
+      if (mA > 0) {
+        ax /= mA; ay /= mA;
+        const sign = (phase>0 ? 1.0 : 0.4);
+        fx += (ax - vx[i]) * params.alignForce * sign;
+        fy += (ay - vy[i]) * params.alignForce * sign;
+      }
+
+      // 속도/위치 적분
+      vx[i] += fx * dt;
+      vy[i] += fy * dt;
+      const sp = Math.hypot(vx[i], vy[i]);
+      const spMin = params.speedMin*DPR, spMax = params.speedMax*DPR*(phase>0?1.0:1.25);
+      if (sp < spMin) { const s = spMin/(sp||1); vx[i]*=s; vy[i]*=s; }
+      if (sp > spMax) { const s = spMax/sp; vx[i]*=s; vy[i]*=s; }
+
+      x[i] += vx[i]*dt*(phase>0?1.0:1.05);
+      y[i] += vy[i]*dt*(phase>0?1.0:1.05);
+
+      // 벽 반사(감쇠 적고, 테두리 척력 덕분에 덜 들러붙음)
+      const w = canvas.width, h = canvas.height, rr = r[i]*2;
+      if (x[i] < rr) { x[i]=rr; vx[i]*=-params.wallBounce; }
+      if (x[i] > w-rr) { x[i]=w-rr; vx[i]*=-params.wallBounce; }
+      if (y[i] < rr) { y[i]=rr; vy[i]*=-params.wallBounce; }
+      if (y[i] > h-rr) { y[i]=h-rr; vy[i]*=-params.wallBounce; }
+
+      // 렌더
+      const alpha = Math.min(1, Math.min(age/800, remain));
+      const rad = r[i];
+
+      // glow
+      ctx.beginPath();
+      ctx.arc(x[i], y[i], rad*2.2, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${0.045*alpha})`;
+      ctx.fill();
+
+      // core (큰 개체는 더 밝게 살짝 강조)
+      const brightBoost = clamp((rad/(params.radiusMax*params.bigScale*DPR)), 0.4, 1.0) * 0.25;
+      ctx.beginPath();
+      ctx.arc(x[i], y[i], rad, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${(0.78+brightBoost)*alpha})`;
+      ctx.fill();
+    }
+
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  addEventListener('keydown', (e) => {
+    if (e.key === 'c' || e.key === 'C') { phase *= -1; }
+    else if (e.key === 'f' || e.key === 'F') {
+      for (let i=0;i<count;i++) {
+        const [ux, uy] = flowVec(x[i], y[i], nowMS());
+        vx[i] += ux * 0.25 * DPR;
+        vy[i] += uy * 0.25 * DPR;
+      }
+    } else if (e.key === '+') {
+      params.spawnPerSec = clamp(params.spawnPerSec + 0.5, 0, 8);
+    } else if (e.key === '-') {
+      params.spawnPerSec = clamp(params.spawnPerSec - 0.5, 0, 8);
+    }
+  });
+})();
+</script>
+</body>
+</html>
