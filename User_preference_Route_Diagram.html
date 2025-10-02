@@ -1,0 +1,220 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Network Diagram with High Transparency Lines</title>
+    <style>
+        body { margin: 0; background: black; }
+        canvas { width: 100%; height: 100%; display: block; }
+        div.tooltip { 
+            position: absolute; 
+            background-color: white; 
+            padding: 5px; 
+            border: 1px solid black; 
+            display: none; 
+        }
+        div.info {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        .gold-star {
+            font-size: 0.8em;
+            color: gold;
+        }
+    </style>
+</head>
+<body>
+    <div class="tooltip"></div>
+    <div class="info"></div>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script>
+        let scene, camera, renderer, controls, raycaster, mouse, selectedStar = null;
+        let tooltip = document.querySelector('.tooltip');
+        let info = document.querySelector('.info');
+        let lastInteractionTime = Date.now();
+        const interactionDelay = 3000; // 3 seconds for rotation
+        const updateInterval = 10000; // 10 seconds for new star selection
+        const bookNames = [
+            'Galactic Odyssey', 'Starlight Tales', 'Void Horizons', 'Celestial Dreams', 'Orbiting Mysteries',
+            'Cosmic Legends', 'Stellar Journeys', 'Interstellar Myths', 'Galaxy Chronicles', 'Astral Adventures'
+        ];
+        let spheres = [];
+        let linesMesh, lineMaterial;
+        let connections = {};
+
+        function init() {
+            scene = new THREE.Scene();
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 2000);
+            camera.position.z = 500;
+
+            renderer = new THREE.WebGLRenderer({antialias: true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.25;
+            controls.enableZoom = true;
+
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            let geometry = new THREE.SphereGeometry(5 / 3, 32, 32);
+            let radius = 400;
+            for (let i = 0; i < 1000; i++) {
+                let r = radius * Math.cbrt(Math.random());
+                let theta = 2 * Math.PI * Math.random();
+                let phi = Math.acos(2 * Math.random() - 1);
+                let x = r * Math.sin(phi) * Math.cos(theta);
+                let y = r * Math.sin(phi) * Math.sin(theta);
+                let z = r * Math.cos(phi);
+                let material = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let sphere = new THREE.Mesh(geometry, material);
+                sphere.position.set(x, y, z);
+                scene.add(sphere);
+                spheres.push(sphere);
+                connections[i] = [];
+            }
+
+            lineMaterial = new THREE.LineBasicMaterial({color: 0xffffff, transparent: true, opacity: 0.1}); // 90% transparency
+            let lineGeometry = new THREE.BufferGeometry();
+            let linePositions = [];
+
+            spheres.forEach((sphere, idx) => {
+                if (Math.random() > 0.95) {  // Increase the probability of connections to 2x
+                    spheres.forEach((otherSphere, otherIdx) => {
+                        if (idx !== otherIdx && Math.random() > 0.95) {
+                            linePositions.push(sphere.position.x, sphere.position.y, sphere.position.z);
+                            linePositions.push(otherSphere.position.x, otherSphere.position.y, otherSphere.position.z);
+                            connections[idx].push(otherIdx);
+                            connections[otherIdx].push(idx);
+                        }
+                    });
+                }
+            });
+
+            lineGeometry.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+            linesMesh = new THREE.LineSegments(lineGeometry, lineMaterial);
+            scene.add(linesMesh);
+
+            window.addEventListener("resize", onWindowResize, false);
+            document.addEventListener("mousemove", onMouseMove, false);
+            document.addEventListener("mousedown", onMouseDown, false);
+            document.addEventListener("wheel", () => { lastInteractionTime = Date.now(); });
+
+            setInterval(selectRandomStar, updateInterval);
+
+            animate();
+        }
+
+        function animate() {
+            let timeElapsed = Date.now() - lastInteractionTime;
+            if (timeElapsed > interactionDelay) {
+                scene.rotation.y += 0.0005; // 50% slower rotation
+            }
+            controls.update();
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onMouseMove(event) {
+            lastInteractionTime = Date.now();
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            let intersects = raycaster.intersectObjects(spheres, true);
+            if (intersects.length > 0) {
+                let object = intersects[0].object;
+                tooltip.style.display = 'block';
+                tooltip.style.left = event.clientX + 'px';
+                tooltip.style.top = event.clientY + 'px';
+                tooltip.textContent = bookNames[spheres.indexOf(object) % bookNames.length];
+            } else {
+                tooltip.style.display = 'none';
+            }
+        }
+
+        function onMouseDown(event) {
+            lastInteractionTime = Date.now();
+            raycaster.setFromCamera(mouse, camera);
+            let intersects = raycaster.intersectObjects(spheres, true);
+            if (intersects.length > 0) {
+                let object = intersects[0].object;
+                if (selectedStar) {
+                    selectedStar.material.color.set(0xffffff); // Reset previous selected star to white
+                    selectedStar.scale.set(1, 1, 1);
+                    resetConnectedStarsColor();
+                }
+                selectedStar = object;
+                selectedStar.material.color.set(0xff0000); // Set selected star to red
+                selectedStar.scale.set(3, 3, 3);
+                highlightConnectedStars(selectedStar);
+                updateInfo(selectedStar);
+            }
+        }
+
+        function resetConnectedStarsColor() {
+            spheres.forEach(sphere => {
+                if (sphere.material.color.getHexString() === 'ffd700') {
+                    sphere.material.color.set(0xffffff); // Reset connected stars color to white
+                    sphere.scale.set(1, 1, 1);
+                }
+            });
+        }
+
+        function highlightConnectedStars(selectedStar) {
+            let index = spheres.indexOf(selectedStar);
+            if (index !== -1 && connections[index]) {
+                connections[index].forEach(i => {
+                    spheres[i].material.color.set(0xffd700); // Set connected stars to gold
+                    spheres[i].scale.set(3, 3, 3);
+                });
+            }
+        }
+
+        function updateInfo(selectedStar) {
+            let index = spheres.indexOf(selectedStar);
+            let html = `<div>Selected Star: ${bookNames[index % bookNames.length]}</div>`;
+            if (index !== -1 && connections[index]) {
+                connections[index].forEach(i => {
+                    html += `<div class="gold-star">${bookNames[i % bookNames.length]}</div>`;
+                });
+            }
+            info.innerHTML = html;
+        }
+
+        function selectRandomStar() {
+            if (Date.now() - lastInteractionTime > updateInterval) {
+                let randomIndex = Math.floor(Math.random() * spheres.length);
+                let randomStar = spheres[randomIndex];
+                if (selectedStar) {
+                    selectedStar.material.color.set(0xffffff); // Reset previous selected star to white
+                    selectedStar.scale.set(1, 1, 1);
+                    resetConnectedStarsColor();
+                }
+                selectedStar = randomStar;
+                selectedStar.material.color.set(0xff0000); // Set selected star to red
+                selectedStar.scale.set(3, 3, 3);
+                highlightConnectedStars(selectedStar);
+                updateInfo(selectedStar);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
