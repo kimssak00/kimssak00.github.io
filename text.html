@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Learning Center Activities</title>
+  <style>
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      padding: 40px;
+      font-size: 18px;
+      line-height: 1.8;
+    }
+    .highlight {
+      color: #d1b147;
+      transition: color 0.5s;
+    }
+  </style>
+</head>
+<body>
+  <div id="activity-container"></div>
+
+  <script>
+    const activities = [
+      "Reading", "Workshops", "Digital content creation", "Group discussions", "Coding", "Archiving",
+      "Idea sharing", "Mini exhibitions", "Project collaboration", "Self-directed learning", "Video editing",
+      "Design sprints", "Startup ideation", "Writing workshops", "Researching", "Book discussions",
+      "Social media planning", "Branding exercises", "Local exploration", "Community interviews",
+      "Podcast production", "Exhibit setup", "3D printing", "Digital literacy training", "Tech seminars",
+      "Book curation", "Art making", "Presentation prep", "Photography", "Sketching", "Architecture modeling",
+      "Data visualization", "Public data analysis", "Urban research", "Community design", "UX research",
+      "Marketing strategy", "Typography practice", "Audio editing", "Lighting design", "Interaction design",
+      "Brainstorming", "Design research", "Living lab projects", "Psychology lectures", "Public art planning",
+      "Video shooting", "Online seminars", "Digital tools practice", "Web design", "Blogging",
+      "Digital comics", "Critical writing", "Social issue research", "Citizen data gathering", "Environmental studies",
+      "Networking events", "Urban walk programs", "Indoor filming", "Intro to coding", "Basic electronics",
+      "Audiobook recording", "Resume writing", "VR experience", "Digital painting", "Social campaigns",
+      "Field research", "Guest lectures", "Book design", "Game development", "Data storytelling",
+      "Portfolio making", "Library curation", "Visual thinking", "Youth mentoring", "Autobiography writing",
+      "Storytelling techniques", "Field internships", "Global case studies", "Book review videos",
+      "Social enterprise analysis", "AI exploration", "Creative showcases", "Poster design",
+      "Data collection training", "Community brainstorming", "Drone filming", "Youth forums",
+      "Basic design tools", "Field interviews", "Chatbot making", "Photobook production", "Radio drama creation",
+      "Blueprint drawing", "Media literacy", "E-publishing", "Infographics", "Creative performance planning",
+      "Virtual space design", "Interactive storytelling", "Lighting workshop", "Magazine editing",
+      "Webtoon planning", "AI workshop", "Digital ethics", "Startup mentoring", "Debate training",
+      "Career coaching", "Field writing", "Data journalism", "Live streaming", "Film scoring",
+      "Mobile app design", "UI mockups", "Brand audit", "Soundscaping", "Animation basics",
+      "User interview", "Game concepting", "Sci-fi prototyping", "Civic hacking", "Knowledge sharing",
+      "Database modeling", "Hackathon participation", "Audio mixing", "Stop-motion creation",
+      "QR code trail", "AR art installation", "Public signage design", "Service blueprinting",
+      "Digital sculpture", "User persona building", "NLP experiment", "Behavior mapping", "Language exchange",
+      "3D scanning", "Creative writing", "Heritage archiving", "Material research", "Design sprint facilitation",
+      "Mind mapping", "Project pitching", "Figma prototyping", "Social mapping", "Grassroots media",
+      "Video journalism", "Workshop moderation", "Interactive quiz design", "Public survey", "Scenario planning",
+      "Gamified learning", "Ethnographic study", "Digital collage", "Web accessibility check", "Emotional design",
+      "Digital scrapbooking", "Augmented reality", "Voice acting", "Interview editing", "Open source project",
+      "Public workshop planning", "Screenwriting basics", "Digital twin modeling", "Hack culture study",
+      "Maker fair planning", "Design challenge hosting", "Co-creation session", "Local history mapping",
+      "Typography showcase", "Lighting experiment", "Volunteer organizing", "Remote user testing",
+      "Gamification strategy", "Sustainability audit", "Social innovation sprint", "Virtual exhibition curation",
+      "AI ethics debate", "Zero waste challenge", "Eco-design prototyping", "Climate data storytelling",
+      "Digital mural", "Civic tech briefing", "Remote collaboration", "Podcast hosting", "Public talk organizing",
+      "Design reflection", "Sensory experience mapping", "Educational toolkit design", "Urban sound recording",
+      "Accessibility design sprint", "Future scenario game", "Wiki editing", "Coding dojo", "Public space mapping",
+      "Museum audio guide", "Digital poster remix", "Live art streaming", "Local storytelling", "Archival scanning",
+      "Data cleanup project", "Digital mapping walk"
+    ];
+
+    let currentOrder = [...activities];
+    const container = document.getElementById("activity-container");
+
+    function shuffle(array) {
+      return array
+        .map(v => ({ v, sort: Math.random() }))
+        .sort((a, b) => a.sort - b.sort)
+        .map(({ v }) => v);
+    }
+
+    function renderActivities() {
+      container.innerHTML = '';
+      currentOrder.forEach((word, index) => {
+        const span = document.createElement('span');
+        span.textContent = word + ' ';
+        span.dataset.index = index;
+        container.appendChild(span);
+      });
+    }
+
+    function updateHighlights() {
+      const spans = container.querySelectorAll('span');
+      spans.forEach(span => span.classList.remove('highlight'));
+
+      const highlightCount = Math.floor(Math.random() * 25) + 1;
+      const indices = new Set();
+      while (indices.size < highlightCount) {
+        indices.add(Math.floor(Math.random() * spans.length));
+      }
+      indices.forEach(i => spans[i].classList.add('highlight'));
+    }
+
+    function reshuffleText() {
+      currentOrder = shuffle(currentOrder);
+      renderActivities();
+    }
+
+    // 초기 렌더링
+    reshuffleText();
+    updateHighlights();
+
+    // 2초마다 색상 변경
+    setInterval(updateHighlights, 2000);
+
+    // 4초마다 텍스트 순서 섞기
+    setInterval(() => {
+      reshuffleText();
+      updateHighlights();
+    }, 4000);
+  </script>
+</body>
+</html>
